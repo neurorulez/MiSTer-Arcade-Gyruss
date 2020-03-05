@@ -67,12 +67,20 @@ module emu
 	// 1 - D-/TX
 	// 2..6 - USR2..USR6
 	// Set USER_OUT to 1 to read from USER_IN.
+	output        USER_OSD,	
+	output        USER_MODE,
 	input   [6:0] USER_IN,
 	output  [6:0] USER_OUT
 );
 
 assign VGA_F1    = 0;
-assign USER_OUT  = '1;
+
+wire   JOY_CLK, JOY_LOAD;
+wire   JOY_DATA  = USER_IN[5];
+assign USER_OUT  = |status[63:62] ? {5'b11111,JOY_CLK,JOY_LOAD} : '1;
+assign USER_MODE = |status[63:62] ;
+assign USER_OSD  = joydb15_1[10] & joydb15_1[6];
+
 assign LED_USER  = ioctl_download;
 assign LED_DISK  = 0;
 assign LED_POWER = 0;
@@ -89,6 +97,7 @@ localparam CONF_STR = {
 	"H0O1,Aspect Ratio,Original,Wide;",
 	"O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"H0O6,Orientation,Vert,Horz;",
+	"oUV,Serial SNAC DB15,Off,1 Player,2 Players;",	
 	"-;",
 	"DIP;",
 	"-;",
@@ -121,7 +130,7 @@ pll pll
 
 ///////////////////////////////////////////////////
 
-wire [31:0] status;
+wire [63:0] status;
 wire  [1:0] buttons;
 wire        forced_scandoubler;
 wire		direct_video;
@@ -133,11 +142,27 @@ wire [24:0] ioctl_addr;
 wire  [7:0] ioctl_dout;
 
 wire [10:0] ps2_key;
-wire [15:0] joystk1, joystk2;
+wire [15:0] joystk1_USB, joystk2_USB;
 wire [15:0] joystick_analog_0;
 wire [15:0] joystick_analog_1;
 
 wire [21:0]	gamma_bus;
+
+wire [15:0] joystk1 = |status[63:62] ? {joydb15_1[11],joydb15_1[9],joydb15_1[10],joydb15_1[4:0]} : joystk1_USB;
+wire [15:0] joystk2 =  status[63]    ? {joydb15_2[11],joydb15_2[10],joydb15_2[9],joydb15_2[4:0]} : status[30] ? joystk1_USB : joystk2_USB;
+
+//----BA 9876543210
+//----LS FEDCBAUDLR
+reg [15:0] joydb15_1,joydb15_2;
+joy_db15 joy_db15
+(
+  .clk       ( clk_sys   ), //48MHz
+  .JOY_CLK   ( JOY_CLK   ),
+  .JOY_DATA  ( JOY_DATA  ),
+  .JOY_LOAD  ( JOY_LOAD  ),
+  .joystick1 ( joydb15_1 ),
+  .joystick2 ( joydb15_2 )	  
+);
 
 hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 (
@@ -162,8 +187,9 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 	.ioctl_dout(ioctl_dout),
 	.ioctl_index(ioctl_index),
 
-	.joystick_0(joystk1),
-	.joystick_1(joystk2),
+	.joy_raw(joydb15_1[5:0]),
+	.joystick_0(joystk1_USB),
+	.joystick_1(joystk2_USB),
 	.joystick_analog_0(joystick_analog_0),
 	.joystick_analog_1(joystick_analog_1),	
 
